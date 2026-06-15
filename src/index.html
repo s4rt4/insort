@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insort - Invoice Sorter</title>
+    <!-- Bootstrap 5 CSS (vendored locally for offline use) -->
+    <link href="vendor/bootstrap.min.css" rel="stylesheet">
+    <!-- SortableJS (vendored locally for offline use) -->
+    <script src="vendor/Sortable.min.js"></script>
+    <style>
+        :root {
+            --sidebar-width: 340px;
+            /* default theme: soft green (overridden by JS) */
+            --accent: #6aa07a;
+            --app-bg: #eef5f0;
+            --tint: #e2efe8;
+        }
+        body, html { height: 100%; margin: 0; overflow: hidden; }
+
+        .app { display: flex; height: 100vh; }
+
+        .sidebar {
+            width: var(--sidebar-width);
+            flex-shrink: 0;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            border-right: 1px solid #dee2e6;
+            background-color: var(--app-bg);
+        }
+
+        .main-viewer {
+            flex: 1 1 auto;
+            height: 100vh;
+            padding: 0;
+            position: relative;
+            background-color: #525659; /* PDF viewer bg color */
+        }
+        #pdf-frame { width: 100%; height: 100%; border: none; }
+
+        /* ---- Toolbar ---- */
+        .action-bar {
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            background-color: var(--app-bg);
+            padding: 8px 10px;
+            border-bottom: 1px solid #dee2e6;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .toolbar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 2px;
+        }
+        .tool-btn {
+            width: 34px;
+            height: 34px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            border: 1px solid transparent;
+            background: transparent;
+            border-radius: 7px;
+            color: #495057;
+            cursor: pointer;
+            transition: background-color .15s, color .15s;
+        }
+        .tool-btn:hover { background: var(--tint); color: var(--accent); }
+        .tool-btn:active { transform: translateY(1px); }
+        .tool-btn.active { background: var(--accent); color: #fff; }
+        .tool-btn.primary { color: var(--accent); }
+        .tool-btn.primary:hover { background: var(--accent); color: #fff; }
+        .tool-btn svg { width: 18px; height: 18px; }
+        /* Button with a text label (e.g. Open) */
+        #btn-open { width: auto; gap: 6px; padding: 0 12px; font-size: 14px; font-weight: 600; }
+        .tool-sep { width: 1px; height: 22px; background: #dee2e6; margin: 0 4px; }
+
+        /* ---- Theme color swatches ---- */
+        .swatches { display: inline-flex; align-items: center; gap: 6px; }
+        .swatch {
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 2px solid transparent;
+            box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06);
+            padding: 0;
+            cursor: pointer;
+            transition: transform .12s, border-color .12s;
+        }
+        .swatch:hover { transform: scale(1.15); }
+        .swatch.active {
+            border-color: #3d4852;
+            box-shadow: inset 0 0 0 2px #fff;
+        }
+
+        #search-box { margin-top: 8px; }
+        #file-count { margin-top: 8px; }
+
+        /* ---- File list ---- */
+        .file-item {
+            cursor: default;
+            transition: background-color 0.2s;
+        }
+        .file-item.active { background-color: var(--accent); color: white; }
+        .file-item.active .filename-text { color: white; }
+        .file-item.processed { background-color: #d1e7dd; color: #0f5132; }
+        .file-item.processed .filename-text { text-decoration: line-through; opacity: 0.7; }
+        .processed-checkbox { cursor: pointer; }
+        .filename-text { cursor: pointer; }
+
+        /* Dedicated drag handle — only this starts a drag */
+        .drag-handle {
+            flex-shrink: 0;
+            display: inline-flex;
+            align-items: center;
+            color: #adb5bd;
+            cursor: grab;
+        }
+        .drag-handle:active { cursor: grabbing; }
+        .drag-handle svg { width: 16px; height: 16px; }
+        .file-item.active .drag-handle { color: rgba(255,255,255,0.85); }
+        .sortable-ghost { opacity: 0.4; background: var(--tint) !important; }
+        .sortable-fallback { opacity: 0.85; }
+
+        /* ---- Date button (calendar) ---- */
+        .date-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+            height: 28px;
+            padding: 2px 7px;
+            border: 1px solid #ced4da;
+            background: #fff;
+            color: #6c757d;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .date-btn:hover { border-color: var(--accent); color: var(--accent); }
+        .date-btn.has-date { color: var(--accent); border-color: var(--accent); font-weight: 600; }
+        .date-btn svg { width: 15px; height: 15px; }
+        .date-label { font-size: 13px; min-width: 6px; line-height: 1; }
+
+        /* ---- Date picker popup ---- */
+        .date-popup {
+            position: fixed;
+            z-index: 2000;
+            background: #fff;
+            border: 1px solid #dee2e6;
+            border-radius: 10px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.18);
+            padding: 10px;
+        }
+        .date-grid { display: grid; grid-template-columns: repeat(7, 30px); gap: 4px; }
+        .date-cell {
+            width: 30px; height: 30px;
+            border: none;
+            background: #f1f3f5;
+            border-radius: 6px;
+            font-size: 13px;
+            color: #212529;
+            cursor: pointer;
+        }
+        .date-cell:hover { background: var(--tint); color: var(--accent); }
+        .date-cell.sel { background: var(--accent); color: #fff; }
+        .date-clear {
+            display: block; width: 100%; margin-top: 8px;
+            border: none; background: transparent;
+            color: #6c757d; font-size: 13px; padding: 6px; border-radius: 6px; cursor: pointer;
+        }
+        .date-clear:hover { background: #f1f3f5; color: #212529; }
+    </style>
+</head>
+<body>
+
+<div class="app">
+    <!-- Sidebar -->
+    <div class="sidebar" id="sidebar">
+        <!-- Toolbar -->
+        <div class="action-bar">
+            <div class="toolbar">
+                <button class="tool-btn primary" id="btn-open" title="Open invoice folder">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+                    <span>Open</span>
+                </button>
+                <button class="tool-btn" id="btn-search" title="Search / filter files">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+                </button>
+
+                <div class="tool-sep"></div>
+
+                <button class="tool-btn" id="btn-narrow" title="Narrow sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>
+                </button>
+                <button class="tool-btn" id="btn-widen" title="Widen sidebar">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/><path d="M12 8v8"/></svg>
+                </button>
+
+                <div class="tool-sep"></div>
+
+                <div class="swatches" id="swatches">
+                    <button class="swatch" data-theme="green"  title="Soft green"  style="background:#a8d5ba;"></button>
+                    <button class="swatch" data-theme="blue"   title="Soft blue"   style="background:#a9cce8;"></button>
+                    <button class="swatch" data-theme="orange" title="Soft warm orange" style="background:#f4c89f;"></button>
+                    <button class="swatch" data-theme="purple" title="Soft purple" style="background:#c7b9e2;"></button>
+                </div>
+            </div>
+
+            <!-- Search box (toggled) -->
+            <input type="text" id="search-box" class="form-control form-control-sm" placeholder="Filter by file name..." style="display:none;">
+
+            <div id="file-count" class="text-center text-muted small">No folder selected</div>
+        </div>
+
+        <!-- File List -->
+        <div id="file-list" class="list-group list-group-flush flex-grow-1" style="overflow-y:auto;">
+            <div class="p-3 text-muted text-center" id="empty-msg">
+                Click "Open" to choose an invoice folder.
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Viewer -->
+    <div class="main-viewer">
+        <iframe id="pdf-frame" src=""></iframe>
+        <div id="placeholder" class="position-absolute top-50 start-50 translate-middle text-white text-center">
+            <h3>Select a folder to begin</h3>
+        </div>
+    </div>
+</div>
+
+<!-- Date picker popup (shared) -->
+<div id="date-popup" class="date-popup" style="display:none;"></div>
+
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const fileListEl = document.getElementById('file-list');
+        const pdfFrame = document.getElementById('pdf-frame');
+        const placeholder = document.getElementById('placeholder');
+        const fileCountCheck = document.getElementById('file-count');
+        const emptyMsg = document.getElementById('empty-msg');
+        const searchBox = document.getElementById('search-box');
+        const datePopup = document.getElementById('date-popup');
+
+        const CALENDAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
+        const GRIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
+
+        let currentPreviewUrl = null;
+        const SB_MIN = 220, SB_MAX = 640, SB_STEP = 40;
+
+        // Tauri native APIs (exposed via withGlobalTauri)
+        const TAURI = window.__TAURI__;
+
+        // --- Drag & Drop ---
+        // forceFallback: WebView2/Edge blocks native HTML5 drag-and-drop, so use
+        // Sortable's own pointer-based dragging. handle: drag starts only from the
+        // grip, so the rest of the row stays easy to click (normal arrow cursor).
+        new Sortable(fileListEl, {
+            animation: 150,
+            forceFallback: true,
+            fallbackOnBody: true,
+            handle: '.drag-handle',
+            ghostClass: 'sortable-ghost',
+            fallbackClass: 'sortable-fallback'
+        });
+
+        // --- Helpers ---
+        const items = () => Array.from(fileListEl.querySelectorAll('.file-item'));
+        const setSidebarWidth = (px) => {
+            const w = Math.max(SB_MIN, Math.min(SB_MAX, px));
+            document.documentElement.style.setProperty('--sidebar-width', w + 'px');
+        };
+        const currentSidebarWidth = () =>
+            parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 340;
+
+        // --- 1. Open folder (native dialog, no browser upload prompt) ---
+        document.getElementById('btn-open').addEventListener('click', openFolder);
+
+        async function openFolder() {
+            if (!TAURI) { alert('Please run inside the Insort app.'); return; }
+            let dir;
+            try {
+                dir = await TAURI.dialog.open({ directory: true, multiple: false, title: 'Select invoice folder' });
+            } catch (err) { console.error(err); return; }
+            if (!dir) return;
+
+            let pdfs;
+            try {
+                pdfs = await TAURI.core.invoke('list_pdfs', { dir });
+            } catch (err) { alert('Failed to read folder:\n' + err); return; }
+
+            buildList(pdfs);
+        }
+
+        function buildList(pdfs) {
+            fileListEl.innerHTML = '';
+            if (currentPreviewUrl) { URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
+            pdfFrame.src = '';
+            placeholder.style.display = 'block';
+
+            if (!pdfs || !pdfs.length) {
+                fileListEl.appendChild(emptyMsg);
+                emptyMsg.textContent = "No PDF files found in this folder.";
+                fileCountCheck.textContent = "0 PDF files found";
+                return;
+            }
+
+            const fragment = document.createDocumentFragment();
+            pdfs.forEach(p => {
+                const div = document.createElement('div');
+                div.className = 'list-group-item list-group-item-action file-item d-flex align-items-center gap-2';
+                div.dataset.key = p.path;
+                div.dataset.name = p.name.toLowerCase();
+                div.dataset.date = '';
+                div.title = p.path;
+
+                const handle = document.createElement('span');
+                handle.className = 'drag-handle';
+                handle.title = 'Drag to reorder';
+                handle.innerHTML = GRIP_SVG;
+
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.className = 'form-check-input flex-shrink-0 my-0 processed-checkbox';
+                checkbox.title = 'Mark as processed';
+
+                const span = document.createElement('span');
+                span.className = 'flex-grow-1 text-truncate filename-text';
+                span.textContent = p.name;
+
+                const dateBtn = document.createElement('button');
+                dateBtn.type = 'button';
+                dateBtn.className = 'date-btn';
+                dateBtn.title = 'Set invoice date';
+                dateBtn.innerHTML = CALENDAR_SVG + '<span class="date-label"></span>';
+
+                div.append(handle, checkbox, span, dateBtn);
+                fragment.appendChild(div);
+            });
+
+            fileListEl.appendChild(fragment);
+            fileCountCheck.textContent = `${pdfs.length} PDF files found`;
+            applyFilter();
+        }
+
+        // --- 2. Preview & per-item controls ---
+        fileListEl.addEventListener('click', async function(e) {
+            const item = e.target.closest('.file-item');
+            if (!item) return;
+
+            if (e.target.closest('.drag-handle')) return;
+            if (e.target.classList.contains('processed-checkbox')) {
+                item.classList.toggle('processed', e.target.checked);
+                return;
+            }
+            const dBtn = e.target.closest('.date-btn');
+            if (dBtn) { openDatePicker(item, dBtn); return; }
+
+            items().forEach(el => el.classList.remove('active'));
+            item.classList.add('active');
+
+            const path = item.dataset.key;
+            try {
+                const b64 = await TAURI.core.invoke('read_pdf', { path });
+                const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+                const blob = new Blob([bytes], { type: 'application/pdf' });
+                if (currentPreviewUrl) URL.revokeObjectURL(currentPreviewUrl);
+                currentPreviewUrl = URL.createObjectURL(blob);
+                pdfFrame.src = currentPreviewUrl;
+                placeholder.style.display = 'none';
+            } catch (err) {
+                console.error(err);
+                alert('Failed to open PDF:\n' + err);
+            }
+        });
+
+        // --- 3. Date picker (calendar grid 1-31, no weekdays) ---
+        (function buildDateGrid() {
+            let html = '<div class="date-grid">';
+            for (let d = 1; d <= 31; d++) html += `<button type="button" class="date-cell" data-day="${d}">${d}</button>`;
+            html += '</div><button type="button" class="date-clear" data-day="">Clear date</button>';
+            datePopup.innerHTML = html;
+        })();
+
+        let dateTarget = null;
+        function openDatePicker(item, btn) {
+            dateTarget = item;
+            datePopup.style.display = 'block';
+            // position near the button, kept on screen
+            const r = btn.getBoundingClientRect();
+            const pw = datePopup.offsetWidth, ph = datePopup.offsetHeight;
+            let left = r.left, top = r.bottom + 4;
+            if (left + pw > window.innerWidth - 8) left = window.innerWidth - pw - 8;
+            if (top + ph > window.innerHeight - 8) top = r.top - ph - 4;
+            datePopup.style.left = Math.max(8, left) + 'px';
+            datePopup.style.top = Math.max(8, top) + 'px';
+            // highlight current selection
+            const cur = item.dataset.date;
+            datePopup.querySelectorAll('.date-cell').forEach(c => c.classList.toggle('sel', c.dataset.day === cur));
+        }
+        datePopup.addEventListener('click', (e) => {
+            const cell = e.target.closest('[data-day]');
+            if (!cell || !dateTarget) return;
+            const day = cell.dataset.day; // '' = clear
+            dateTarget.dataset.date = day;
+            dateTarget.querySelector('.date-label').textContent = day || '';
+            dateTarget.querySelector('.date-btn').classList.toggle('has-date', !!day);
+            datePopup.style.display = 'none';
+            sortByDate();
+        });
+        // close popup on outside click / Escape
+        document.addEventListener('click', (e) => {
+            if (datePopup.style.display !== 'none' &&
+                !e.target.closest('#date-popup') && !e.target.closest('.date-btn')) {
+                datePopup.style.display = 'none';
+            }
+        });
+        document.addEventListener('keydown', (e) => { if (e.key === 'Escape') datePopup.style.display = 'none'; });
+
+        // --- Auto-sort by invoice date. Only fires on date change, so manual drag stays. ---
+        function sortByDate() {
+            const dayOf = (it) => {
+                const n = parseInt(it.dataset.date, 10);
+                return isNaN(n) ? Infinity : n;  // undated items go to the bottom
+            };
+            // Array.prototype.sort is stable: same-date items keep their current
+            // (possibly manually dragged) relative order.
+            items().sort((a, b) => dayOf(a) - dayOf(b)).forEach(it => fileListEl.appendChild(it));
+        }
+
+        // --- 4. Search / filter ---
+        document.getElementById('btn-search').addEventListener('click', function() {
+            const show = searchBox.style.display === 'none';
+            searchBox.style.display = show ? 'block' : 'none';
+            this.classList.toggle('active', show);
+            if (show) searchBox.focus(); else { searchBox.value = ''; applyFilter(); }
+        });
+        function applyFilter() {
+            const q = searchBox.value.trim().toLowerCase();
+            items().forEach(it => {
+                it.style.display = (!q || it.dataset.name.includes(q)) ? '' : 'none';
+            });
+        }
+        searchBox.addEventListener('input', applyFilter);
+
+        // --- 5. Sidebar width ---
+        document.getElementById('btn-narrow').addEventListener('click', () => setSidebarWidth(currentSidebarWidth() - SB_STEP));
+        document.getElementById('btn-widen').addEventListener('click', () => setSidebarWidth(currentSidebarWidth() + SB_STEP));
+
+        // --- 6. Theme (all light, soft pastel accents) ---
+        const THEMES = {
+            green:  { accent: '#6aa07a', appBg: '#eef5f0', tint: '#e2efe8' },
+            blue:   { accent: '#6c9bd1', appBg: '#eef3fa', tint: '#e0eaf5' },
+            orange: { accent: '#dd9a6a', appBg: '#fbf4ec', tint: '#f3e6d8' },
+            purple: { accent: '#9b87c4', appBg: '#f3f0fa', tint: '#e9e3f4' }
+        };
+        const swatchEls = Array.from(document.querySelectorAll('#swatches .swatch'));
+        function applyTheme(name) {
+            const t = THEMES[name] || THEMES.green;
+            const root = document.documentElement.style;
+            root.setProperty('--accent', t.accent);
+            root.setProperty('--app-bg', t.appBg);
+            root.setProperty('--tint', t.tint);
+            swatchEls.forEach(s => s.classList.toggle('active', s.dataset.theme === name));
+            try { localStorage.setItem('insort-theme', name); } catch (e) {}
+        }
+        swatchEls.forEach(s => s.addEventListener('click', () => applyTheme(s.dataset.theme)));
+
+        let savedTheme = 'green';
+        try { savedTheme = localStorage.getItem('insort-theme') || 'green'; } catch (e) {}
+        applyTheme(savedTheme);
+    });
+</script>
+
+</body>
+</html>
