@@ -1,6 +1,6 @@
 [package]
 name = "insort"
-version = "0.1.0"
+version = "0.2.0"
 description = "Insort - Invoice PDF Sorter"
 authors = ["you"]
 edition = "2021"

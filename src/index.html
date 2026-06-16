@@ -101,17 +101,89 @@
         #search-box { margin-top: 8px; }
         #file-count { margin-top: 8px; }
 
-        /* ---- File list ---- */
-        .file-item {
-            cursor: default;
-            transition: background-color 0.2s;
+        /* ---- Tree (file-explorer style) ---- */
+        .tree { overflow-y: auto; flex-grow: 1; padding: 4px 0 14px; }
+
+        /* Folder row */
+        .tree-row {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            padding: 5px 8px;
+            padding-left: calc(8px + var(--depth, 0) * 15px);
+            margin: 1px 6px;
+            border-radius: 6px;
+            cursor: pointer;
+            user-select: none;
+            color: #3d4852;
+            font-size: 14px;
         }
+        .tree-row:hover { background: var(--tint); }
+        .tree-chevron {
+            display: inline-flex;
+            align-items: center;
+            flex-shrink: 0;
+            width: 16px;
+            color: #868e96;
+            transition: transform .15s;
+        }
+        .tree-chevron svg { width: 14px; height: 14px; }
+        .tree-chevron.empty { visibility: hidden; }
+        .tree-node.collapsed > .tree-row .tree-chevron { transform: rotate(-90deg); }
+        .tree-node.collapsed > .folder-children { display: none; }
+        .folder-icon { display: inline-flex; flex-shrink: 0; color: var(--accent); }
+        .folder-icon svg { width: 17px; height: 17px; }
+        /* folder icon swaps with expand state: open by default, closed when collapsed */
+        .folder-icon .icon-closed { display: none; }
+        .folder-icon .icon-open { display: inline-flex; }
+        .tree-node.collapsed > .tree-row .folder-icon .icon-open { display: none; }
+        .tree-node.collapsed > .tree-row .folder-icon .icon-closed { display: inline-flex; }
+        .folder-name {
+            flex: 1 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-weight: 600;
+        }
+        .folder-count { flex-shrink: 0; font-size: 12px; color: #adb5bd; }
+        .tree-empty {
+            padding: 3px 8px;
+            padding-left: calc(8px + var(--depth, 0) * 15px);
+            color: #adb5bd;
+            font-size: 13px;
+            font-style: italic;
+        }
+
+        /* ---- File row ---- */
+        .file-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 5px 8px;
+            padding-left: calc(8px + var(--depth, 0) * 15px);
+            margin: 1px 6px;
+            border-radius: 6px;
+            cursor: default;
+            color: #495057;
+            font-size: 14px;
+            transition: background-color 0.15s;
+        }
+        .file-item:hover { background: var(--tint); }
         .file-item.active { background-color: var(--accent); color: white; }
         .file-item.active .filename-text { color: white; }
         .file-item.processed { background-color: #d1e7dd; color: #0f5132; }
         .file-item.processed .filename-text { text-decoration: line-through; opacity: 0.7; }
-        .processed-checkbox { cursor: pointer; }
-        .filename-text { cursor: pointer; }
+        .processed-checkbox { cursor: pointer; flex-shrink: 0; }
+        .file-icon { display: inline-flex; flex-shrink: 0; color: #adb5bd; }
+        .file-icon svg { width: 15px; height: 15px; }
+        .file-item.active .file-icon { color: rgba(255,255,255,0.85); }
+        .filename-text {
+            flex: 1 1 auto;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: pointer;
+        }
 
         /* Dedicated drag handle — only this starts a drag */
         .drag-handle {
@@ -184,8 +256,8 @@
         <!-- Toolbar -->
         <div class="action-bar">
             <div class="toolbar">
-                <button class="tool-btn primary" id="btn-open" title="Open invoice folder">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>
+                <button class="tool-btn primary" id="btn-open" title="Open invoice folders">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
                     <span>Open</span>
                 </button>
                 <button class="tool-btn" id="btn-search" title="Search / filter files">
@@ -217,10 +289,10 @@
             <div id="file-count" class="text-center text-muted small">No folder selected</div>
         </div>
 
-        <!-- File List -->
-        <div id="file-list" class="list-group list-group-flush flex-grow-1" style="overflow-y:auto;">
+        <!-- Folder tree -->
+        <div id="tree" class="tree">
             <div class="p-3 text-muted text-center" id="empty-msg">
-                Click "Open" to choose an invoice folder.
+                Click "Open" to choose invoice folders.
             </div>
         </div>
     </div>
@@ -239,7 +311,7 @@
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const fileListEl = document.getElementById('file-list');
+        const treeEl = document.getElementById('tree');
         const pdfFrame = document.getElementById('pdf-frame');
         const placeholder = document.getElementById('placeholder');
         const fileCountCheck = document.getElementById('file-count');
@@ -249,6 +321,10 @@
 
         const CALENDAR_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>';
         const GRIP_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>';
+        const CHEVRON_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+        const FOLDER_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>';
+        const FOLDER_OPEN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>';
+        const FILE_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>';
 
         let currentPreviewUrl = null;
         const SB_MIN = 220, SB_MAX = 640, SB_STEP = 40;
@@ -256,21 +332,8 @@
         // Tauri native APIs (exposed via withGlobalTauri)
         const TAURI = window.__TAURI__;
 
-        // --- Drag & Drop ---
-        // forceFallback: WebView2/Edge blocks native HTML5 drag-and-drop, so use
-        // Sortable's own pointer-based dragging. handle: drag starts only from the
-        // grip, so the rest of the row stays easy to click (normal arrow cursor).
-        new Sortable(fileListEl, {
-            animation: 150,
-            forceFallback: true,
-            fallbackOnBody: true,
-            handle: '.drag-handle',
-            ghostClass: 'sortable-ghost',
-            fallbackClass: 'sortable-fallback'
-        });
-
         // --- Helpers ---
-        const items = () => Array.from(fileListEl.querySelectorAll('.file-item'));
+        const items = () => Array.from(treeEl.querySelectorAll('.file-item'));
         const setSidebarWidth = (px) => {
             const w = Math.max(SB_MIN, Math.min(SB_MAX, px));
             document.documentElement.style.setProperty('--sidebar-width', w + 'px');
@@ -278,78 +341,181 @@
         const currentSidebarWidth = () =>
             parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 340;
 
-        // --- 1. Open folder (native dialog, no browser upload prompt) ---
-        document.getElementById('btn-open').addEventListener('click', openFolder);
-
-        async function openFolder() {
-            if (!TAURI) { alert('Please run inside the Insort app.'); return; }
-            let dir;
-            try {
-                dir = await TAURI.dialog.open({ directory: true, multiple: false, title: 'Select invoice folder' });
-            } catch (err) { console.error(err); return; }
-            if (!dir) return;
-
-            let pdfs;
-            try {
-                pdfs = await TAURI.core.invoke('list_pdfs', { dir });
-            } catch (err) { alert('Failed to read folder:\n' + err); return; }
-
-            buildList(pdfs);
+        // Count PDFs in a tree node (recursive).
+        function countPdfs(node) {
+            if (!node.children) return node.is_dir ? 0 : 1;
+            return node.children.reduce((s, c) => s + (c.is_dir ? countPdfs(c) : 1), 0);
         }
 
-        function buildList(pdfs) {
-            fileListEl.innerHTML = '';
+        // Drag & drop per folder. forceFallback: WebView2/Edge blocks native HTML5
+        // drag-and-drop, so use Sortable's pointer-based dragging. Each folder's file
+        // list is its own Sortable with no shared group, so drags stay within a folder.
+        function makeSortable(container) {
+            new Sortable(container, {
+                animation: 150,
+                forceFallback: true,
+                fallbackOnBody: true,
+                handle: '.drag-handle',
+                ghostClass: 'sortable-ghost',
+                fallbackClass: 'sortable-fallback'
+            });
+        }
+
+        // --- 1. Open folders (native dialog, multi-select) ---
+        document.getElementById('btn-open').addEventListener('click', openFolders);
+
+        async function openFolders() {
+            if (!TAURI) { alert('Please run inside the Insort app.'); return; }
+            let sel;
+            try {
+                sel = await TAURI.dialog.open({ directory: true, multiple: true, title: 'Select invoice folders' });
+            } catch (err) { console.error(err); return; }
+            if (!sel) return;
+            const dirs = Array.isArray(sel) ? sel : [sel];
+
+            const roots = [];
+            for (const dir of dirs) {
+                try {
+                    roots.push(await TAURI.core.invoke('list_tree', { dir }));
+                } catch (err) {
+                    console.error(err);
+                    alert('Failed to read folder:\n' + dir + '\n' + err);
+                }
+            }
+            buildTree(roots);
+        }
+
+        // --- 2. Render the tree ---
+        function renderFile(node, depth) {
+            const div = document.createElement('div');
+            div.className = 'file-item';
+            div.style.setProperty('--depth', depth);
+            div.dataset.key = node.path;
+            div.dataset.name = node.name.toLowerCase();
+            div.dataset.date = '';
+            div.title = node.path;
+
+            const handle = document.createElement('span');
+            handle.className = 'drag-handle';
+            handle.title = 'Drag to reorder';
+            handle.innerHTML = GRIP_SVG;
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.className = 'form-check-input my-0 processed-checkbox';
+            checkbox.title = 'Mark as processed';
+
+            const fileIcon = document.createElement('span');
+            fileIcon.className = 'file-icon';
+            fileIcon.innerHTML = FILE_SVG;
+
+            const span = document.createElement('span');
+            span.className = 'filename-text';
+            span.textContent = node.name;
+
+            const dateBtn = document.createElement('button');
+            dateBtn.type = 'button';
+            dateBtn.className = 'date-btn';
+            dateBtn.title = 'Set invoice date';
+            dateBtn.innerHTML = CALENDAR_SVG + '<span class="date-label"></span>';
+
+            div.append(handle, checkbox, fileIcon, span, dateBtn);
+            return div;
+        }
+
+        function renderFolder(node, depth) {
+            const wrap = document.createElement('div');
+            wrap.className = 'tree-node folder';
+
+            const row = document.createElement('div');
+            row.className = 'tree-row';
+            row.style.setProperty('--depth', depth);
+            row.title = node.path;
+
+            const hasChildren = node.children && node.children.length > 0;
+
+            const chevron = document.createElement('span');
+            chevron.className = 'tree-chevron' + (hasChildren ? '' : ' empty');
+            chevron.innerHTML = CHEVRON_SVG;
+
+            const ficon = document.createElement('span');
+            ficon.className = 'folder-icon';
+            ficon.innerHTML = '<span class="icon-open">' + FOLDER_OPEN_SVG + '</span>'
+                            + '<span class="icon-closed">' + FOLDER_SVG + '</span>';
+
+            const name = document.createElement('span');
+            name.className = 'folder-name';
+            name.textContent = node.name;
+
+            const count = document.createElement('span');
+            count.className = 'folder-count';
+            count.textContent = countPdfs(node);
+
+            row.append(chevron, ficon, name, count);
+
+            const childrenWrap = document.createElement('div');
+            childrenWrap.className = 'folder-children';
+
+            if (hasChildren) {
+                const subdirs = node.children.filter(c => c.is_dir);
+                const files = node.children.filter(c => !c.is_dir);
+                subdirs.forEach(c => childrenWrap.appendChild(renderFolder(c, depth + 1)));
+                if (files.length) {
+                    const fc = document.createElement('div');
+                    fc.className = 'file-container';
+                    files.forEach(f => fc.appendChild(renderFile(f, depth + 1)));
+                    childrenWrap.appendChild(fc);
+                }
+            } else {
+                const empty = document.createElement('div');
+                empty.className = 'tree-empty';
+                empty.style.setProperty('--depth', depth + 1);
+                empty.textContent = '(no PDFs)';
+                childrenWrap.appendChild(empty);
+            }
+
+            wrap.append(row, childrenWrap);
+            return wrap;
+        }
+
+        function buildTree(roots) {
+            treeEl.innerHTML = '';
             if (currentPreviewUrl) { URL.revokeObjectURL(currentPreviewUrl); currentPreviewUrl = null; }
             pdfFrame.src = '';
             placeholder.style.display = 'block';
 
-            if (!pdfs || !pdfs.length) {
-                fileListEl.appendChild(emptyMsg);
-                emptyMsg.textContent = "No PDF files found in this folder.";
-                fileCountCheck.textContent = "0 PDF files found";
+            const validRoots = (roots || []).filter(Boolean);
+            if (!validRoots.length) {
+                treeEl.appendChild(emptyMsg);
+                emptyMsg.textContent = 'No folders selected.';
+                fileCountCheck.textContent = 'No folder selected';
                 return;
             }
 
             const fragment = document.createDocumentFragment();
-            pdfs.forEach(p => {
-                const div = document.createElement('div');
-                div.className = 'list-group-item list-group-item-action file-item d-flex align-items-center gap-2';
-                div.dataset.key = p.path;
-                div.dataset.name = p.name.toLowerCase();
-                div.dataset.date = '';
-                div.title = p.path;
+            validRoots.forEach(r => fragment.appendChild(renderFolder(r, 0)));
+            treeEl.appendChild(fragment);
 
-                const handle = document.createElement('span');
-                handle.className = 'drag-handle';
-                handle.title = 'Drag to reorder';
-                handle.innerHTML = GRIP_SVG;
+            // Wire up one Sortable per folder's file list.
+            treeEl.querySelectorAll('.file-container').forEach(makeSortable);
 
-                const checkbox = document.createElement('input');
-                checkbox.type = 'checkbox';
-                checkbox.className = 'form-check-input flex-shrink-0 my-0 processed-checkbox';
-                checkbox.title = 'Mark as processed';
-
-                const span = document.createElement('span');
-                span.className = 'flex-grow-1 text-truncate filename-text';
-                span.textContent = p.name;
-
-                const dateBtn = document.createElement('button');
-                dateBtn.type = 'button';
-                dateBtn.className = 'date-btn';
-                dateBtn.title = 'Set invoice date';
-                dateBtn.innerHTML = CALENDAR_SVG + '<span class="date-label"></span>';
-
-                div.append(handle, checkbox, span, dateBtn);
-                fragment.appendChild(div);
-            });
-
-            fileListEl.appendChild(fragment);
-            fileCountCheck.textContent = `${pdfs.length} PDF files found`;
+            const total = items().length;
+            const fn = validRoots.length;
+            fileCountCheck.textContent = total
+                ? `${total} PDF${total > 1 ? 's' : ''} in ${fn} folder${fn > 1 ? 's' : ''}`
+                : 'No PDF files found';
             applyFilter();
         }
 
-        // --- 2. Preview & per-item controls ---
-        fileListEl.addEventListener('click', async function(e) {
+        // --- 3. Preview, folder toggle & per-item controls ---
+        treeEl.addEventListener('click', async function(e) {
+            // Folder row -> expand/collapse
+            const folderRow = e.target.closest('.tree-row');
+            if (folderRow) {
+                folderRow.parentElement.classList.toggle('collapsed');
+                return;
+            }
+
             const item = e.target.closest('.file-item');
             if (!item) return;
 
@@ -379,7 +545,7 @@
             }
         });
 
-        // --- 3. Date picker (calendar grid 1-31, no weekdays) ---
+        // --- 4. Date picker (calendar grid 1-31, no weekdays) ---
         (function buildDateGrid() {
             let html = '<div class="date-grid">';
             for (let d = 1; d <= 31; d++) html += `<button type="button" class="date-cell" data-day="${d}">${d}</button>`;
@@ -411,7 +577,8 @@
             dateTarget.querySelector('.date-label').textContent = day || '';
             dateTarget.querySelector('.date-btn').classList.toggle('has-date', !!day);
             datePopup.style.display = 'none';
-            sortByDate();
+            // Sort only within this file's own folder.
+            sortByDate(dateTarget.closest('.file-container'));
         });
         // close popup on outside click / Escape
         document.addEventListener('click', (e) => {
@@ -422,18 +589,20 @@
         });
         document.addEventListener('keydown', (e) => { if (e.key === 'Escape') datePopup.style.display = 'none'; });
 
-        // --- Auto-sort by invoice date. Only fires on date change, so manual drag stays. ---
-        function sortByDate() {
+        // --- Auto-sort one folder by invoice date. Only fires on date change, so
+        //     manual drag order among same-date items is preserved (stable sort). ---
+        function sortByDate(container) {
+            if (!container) return;
             const dayOf = (it) => {
                 const n = parseInt(it.dataset.date, 10);
                 return isNaN(n) ? Infinity : n;  // undated items go to the bottom
             };
-            // Array.prototype.sort is stable: same-date items keep their current
-            // (possibly manually dragged) relative order.
-            items().sort((a, b) => dayOf(a) - dayOf(b)).forEach(it => fileListEl.appendChild(it));
+            Array.from(container.querySelectorAll('.file-item'))
+                .sort((a, b) => dayOf(a) - dayOf(b))
+                .forEach(it => container.appendChild(it));
         }
 
-        // --- 4. Search / filter ---
+        // --- 5. Search / filter (also hides folders with no matches) ---
         document.getElementById('btn-search').addEventListener('click', function() {
             const show = searchBox.style.display === 'none';
             searchBox.style.display = show ? 'block' : 'none';
@@ -445,14 +614,22 @@
             items().forEach(it => {
                 it.style.display = (!q || it.dataset.name.includes(q)) ? '' : 'none';
             });
+            // Hide folders with no visible files; auto-expand the ones that match.
+            treeEl.querySelectorAll('.tree-node.folder').forEach(f => {
+                if (!q) { f.style.display = ''; return; }
+                const visible = Array.from(f.querySelectorAll('.file-item'))
+                    .some(it => it.style.display !== 'none');
+                f.style.display = visible ? '' : 'none';
+                if (visible) f.classList.remove('collapsed');
+            });
         }
         searchBox.addEventListener('input', applyFilter);
 
-        // --- 5. Sidebar width ---
+        // --- 6. Sidebar width ---
         document.getElementById('btn-narrow').addEventListener('click', () => setSidebarWidth(currentSidebarWidth() - SB_STEP));
         document.getElementById('btn-widen').addEventListener('click', () => setSidebarWidth(currentSidebarWidth() + SB_STEP));
 
-        // --- 6. Theme (all light, soft pastel accents) ---
+        // --- 8. Theme (all light, soft pastel accents) ---
         const THEMES = {
             green:  { accent: '#6aa07a', appBg: '#eef5f0', tint: '#e2efe8' },
             blue:   { accent: '#6c9bd1', appBg: '#eef3fa', tint: '#e0eaf5' },
